@@ -55,18 +55,18 @@ export default function Index() {
   }, [favorites]);
 
   const handleSearch = async () => {
-    const query = searchQuery.toLowerCase().trim();
+    const query = searchQuery.trim();
     if (!query) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${query}`);
+      const response = await fetch(`https://ru.wiktionary.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`);
       
       if (!response.ok) {
         if (response.status === 404) {
-          setError('Слово не найдено. Попробуйте другое слово.');
+          setError('Слово не найдено в словаре. Попробуйте другое слово.');
           setCurrentWord(null);
         } else {
           setError('Ошибка при загрузке данных. Попробуйте позже.');
@@ -75,34 +75,33 @@ export default function Index() {
         return;
       }
 
-      const data: ApiResponse[] = await response.json();
-      const wordData = data[0];
+      const data = await response.json();
+      
+      if (!data.extract) {
+        setError('Слово не найдено. Попробуйте другое слово.');
+        setCurrentWord(null);
+        return;
+      }
 
-      const definitions: Definition[] = [];
-      let defId = 1;
-
-      wordData.meanings.forEach((meaning) => {
-        meaning.definitions.forEach((def) => {
-          definitions.push({
-            id: defId++,
-            meaning: def.definition,
-            partOfSpeech: meaning.partOfSpeech,
-            examples: def.example ? [def.example] : []
-          });
-        });
-      });
-
-      const allSynonyms = new Set<string>();
-      wordData.meanings.forEach((meaning) => {
-        if (meaning.synonyms) {
-          meaning.synonyms.forEach((syn) => allSynonyms.add(syn));
-        }
-      });
+      const extractText = data.extract;
+      const sentences = extractText.split(/[.!?]+/).filter((s: string) => s.trim().length > 0);
+      
+      const definitions: Definition[] = sentences.map((sentence: string, idx: number) => ({
+        id: idx + 1,
+        meaning: sentence.trim(),
+        partOfSpeech: idx === 0 ? 'определение' : '',
+        examples: []
+      }));
 
       setCurrentWord({
-        word: wordData.word,
-        definitions,
-        synonyms: Array.from(allSynonyms)
+        word: query,
+        definitions: definitions.length > 0 ? definitions : [{
+          id: 1,
+          meaning: extractText,
+          partOfSpeech: '',
+          examples: []
+        }],
+        synonyms: []
       });
     } catch (err) {
       setError('Ошибка соединения. Проверьте интернет.');
@@ -136,7 +135,7 @@ export default function Index() {
             Словарь
           </h1>
           <p className="text-muted-foreground text-lg">
-            Подробные определения и примеры употребления слов
+            Толковый словарь русского языка
           </p>
         </div>
 
