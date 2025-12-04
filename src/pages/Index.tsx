@@ -19,20 +19,9 @@ interface Word {
   synonyms: string[];
 }
 
-interface ApiDefinition {
-  definition: string;
-  example?: string;
-}
-
-interface ApiMeaning {
-  partOfSpeech: string;
-  definitions: ApiDefinition[];
-  synonyms?: string[];
-}
-
 interface ApiResponse {
   word: string;
-  meanings: ApiMeaning[];
+  definitions: Definition[];
 }
 
 export default function Index() {
@@ -62,7 +51,7 @@ export default function Index() {
     setError(null);
 
     try {
-      const response = await fetch(`https://ru.wiktionary.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`);
+      const response = await fetch(`https://functions.poehali.dev/a68cf713-b060-46c8-8de1-c548eac271c1?word=${encodeURIComponent(query)}`);
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -75,32 +64,17 @@ export default function Index() {
         return;
       }
 
-      const data = await response.json();
+      const data: ApiResponse = await response.json();
       
-      if (!data.extract) {
+      if (!data.definitions || data.definitions.length === 0) {
         setError('Слово не найдено. Попробуйте другое слово.');
         setCurrentWord(null);
         return;
       }
 
-      const extractText = data.extract;
-      const sentences = extractText.split(/[.!?]+/).filter((s: string) => s.trim().length > 0);
-      
-      const definitions: Definition[] = sentences.map((sentence: string, idx: number) => ({
-        id: idx + 1,
-        meaning: sentence.trim(),
-        partOfSpeech: idx === 0 ? 'определение' : '',
-        examples: []
-      }));
-
       setCurrentWord({
-        word: query,
-        definitions: definitions.length > 0 ? definitions : [{
-          id: 1,
-          meaning: extractText,
-          partOfSpeech: '',
-          examples: []
-        }],
+        word: data.word,
+        definitions: data.definitions,
         synonyms: []
       });
     } catch (err) {
