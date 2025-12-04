@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -19,118 +19,96 @@ interface Word {
   synonyms: string[];
 }
 
-const mockDictionary: Record<string, Word> = {
-  'свет': {
-    word: 'свет',
-    definitions: [
-      {
-        id: 1,
-        meaning: 'Электромагнитное излучение, воспринимаемое глазом и делающее окружающее видимым',
-        partOfSpeech: 'существительное',
-        examples: [
-          'В комнате погас свет',
-          'Солнечный свет проникал через окно',
-          'Включи, пожалуйста, свет'
-        ]
-      },
-      {
-        id: 2,
-        meaning: 'Земля, вселенная, мир',
-        partOfSpeech: 'существительное',
-        examples: [
-          'Путешествие вокруг света',
-          'Появиться на свет',
-          'Увидеть свет'
-        ]
-      },
-      {
-        id: 3,
-        meaning: 'Общество, люди',
-        partOfSpeech: 'существительное',
-        examples: [
-          'Выход в свет',
-          'Высший свет',
-          'Светская жизнь'
-        ]
-      }
-    ],
-    synonyms: ['освещение', 'сияние', 'лучи', 'мир', 'вселенная']
-  },
-  'книга': {
-    word: 'книга',
-    definitions: [
-      {
-        id: 1,
-        meaning: 'Печатное издание в виде переплетённых листов с текстом',
-        partOfSpeech: 'существительное',
-        examples: [
-          'Читать книгу',
-          'Купить книгу в магазине',
-          'Интересная книга'
-        ]
-      },
-      {
-        id: 2,
-        meaning: 'Крупное научное или литературное произведение',
-        partOfSpeech: 'существительное',
-        examples: [
-          'Книга жизни',
-          'Написать книгу',
-          'Издать книгу'
-        ]
-      }
-    ],
-    synonyms: ['том', 'издание', 'произведение', 'фолиант']
-  },
-  'время': {
-    word: 'время',
-    definitions: [
-      {
-        id: 1,
-        meaning: 'Форма протекания физических и психических процессов, условие возможности изменения',
-        partOfSpeech: 'существительное',
-        examples: [
-          'Время летит быстро',
-          'У меня нет времени',
-          'Сколько времени?'
-        ]
-      },
-      {
-        id: 2,
-        meaning: 'Период, эпоха',
-        partOfSpeech: 'существительное',
-        examples: [
-          'Во время войны',
-          'Наше время',
-          'Старые времена'
-        ]
-      }
-    ],
-    synonyms: ['период', 'эпоха', 'час', 'момент', 'пора']
-  }
-};
+interface ApiDefinition {
+  definition: string;
+  example?: string;
+}
+
+interface ApiMeaning {
+  partOfSpeech: string;
+  definitions: ApiDefinition[];
+  synonyms?: string[];
+}
+
+interface ApiResponse {
+  word: string;
+  meanings: ApiMeaning[];
+}
 
 export default function Index() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentWord, setCurrentWord] = useState<Word | null>(null);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'search' | 'favorites'>('search');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSearch = () => {
+  useEffect(() => {
+    const savedFavorites = localStorage.getItem('favorites');
+    if (savedFavorites) {
+      setFavorites(JSON.parse(savedFavorites));
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('favorites', JSON.stringify(favorites));
+  }, [favorites]);
+
+  const handleSearch = async () => {
     const query = searchQuery.toLowerCase().trim();
-    if (query && mockDictionary[query]) {
-      setCurrentWord(mockDictionary[query]);
-    } else if (query) {
-      setCurrentWord({
-        word: query,
-        definitions: [{
-          id: 1,
-          meaning: 'Слово не найдено в словаре. Попробуйте другое слово.',
-          partOfSpeech: '',
-          examples: []
-        }],
-        synonyms: []
+    if (!query) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${query}`);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          setError('Слово не найдено. Попробуйте другое слово.');
+          setCurrentWord(null);
+        } else {
+          setError('Ошибка при загрузке данных. Попробуйте позже.');
+          setCurrentWord(null);
+        }
+        return;
+      }
+
+      const data: ApiResponse[] = await response.json();
+      const wordData = data[0];
+
+      const definitions: Definition[] = [];
+      let defId = 1;
+
+      wordData.meanings.forEach((meaning) => {
+        meaning.definitions.forEach((def) => {
+          definitions.push({
+            id: defId++,
+            meaning: def.definition,
+            partOfSpeech: meaning.partOfSpeech,
+            examples: def.example ? [def.example] : []
+          });
+        });
       });
+
+      const allSynonyms = new Set<string>();
+      wordData.meanings.forEach((meaning) => {
+        if (meaning.synonyms) {
+          meaning.synonyms.forEach((syn) => allSynonyms.add(syn));
+        }
+      });
+
+      setCurrentWord({
+        word: wordData.word,
+        definitions,
+        synonyms: Array.from(allSynonyms)
+      });
+    } catch (err) {
+      setError('Ошибка соединения. Проверьте интернет.');
+      setCurrentWord(null);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -143,11 +121,11 @@ export default function Index() {
   };
 
   const loadFavoriteWord = (word: string) => {
-    if (mockDictionary[word]) {
-      setCurrentWord(mockDictionary[word]);
-      setSearchQuery(word);
-      setActiveTab('search');
-    }
+    setSearchQuery(word);
+    setActiveTab('search');
+    setTimeout(() => {
+      handleSearch();
+    }, 100);
   };
 
   return (
@@ -192,11 +170,22 @@ export default function Index() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                   className="text-lg h-12"
+                  disabled={loading}
                 />
-                <Button onClick={handleSearch} size="lg" className="px-8">
-                  <Icon name="Search" size={20} />
+                <Button onClick={handleSearch} size="lg" className="px-8" disabled={loading}>
+                  {loading ? (
+                    <Icon name="Loader2" size={20} className="animate-spin" />
+                  ) : (
+                    <Icon name="Search" size={20} />
+                  )}
                 </Button>
               </div>
+              {error && (
+                <div className="mt-4 p-3 bg-destructive/10 text-destructive rounded-lg flex items-center gap-2">
+                  <Icon name="AlertCircle" size={18} />
+                  <span>{error}</span>
+                </div>
+              )}
             </Card>
 
             {currentWord && (
